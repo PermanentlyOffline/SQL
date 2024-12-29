@@ -1,0 +1,162 @@
+-- 1. Да се вратат имињата и презимињата на сите премиум корисници кои препорачале видео запис 
+-- со времетраење подолго од 2 часа и за кој оставиле оцена поголема или еднаква на 4,
+-- подредени според датумот на регистрација во растечки редослед
+SELECT k.ime AS korisnik_ime, k.prezime AS korisnik_prezime
+FROM Premium_korisnik pk
+JOIN Korisnik k ON pk.k_ime = k.k_ime
+JOIN Preporaka p ON pk.k_ime = p.k_ime_od
+JOIN Video_zapis v ON p.naslov = v.naslov
+WHERE v.vremetraenje > 120 AND p.ocena >= 4
+ORDER BY k.datum_reg ASC;
+
+-- 2. Да се вратат корисничкото име и бројот на видео записи кои му биле препорачани 
+-- на корисникот кој дал најголем број на препораки.
+WITH KorisniciPreporaki AS (
+    SELECT k_ime_od, COUNT(*) AS vkupno_preporaki
+    FROM Preporaka
+    GROUP BY k_ime_od
+),
+NajgolemBrojPreporaki AS (
+    SELECT k_ime_od
+    FROM KorisniciPreporaki
+    WHERE vkupno_preporaki = (SELECT MAX(vkupno_preporaki) FROM KorisniciPreporaki)
+)
+SELECT nbp.k_ime_od AS korisnik_ime, COUNT(p.naslov) AS broj_dobieni_preporaki
+FROM NajgolemBrojPreporaki nbp
+JOIN Preporaka p ON nbp.k_ime_od = p.k_ime_na
+GROUP BY nbp.k_ime_od;
+
+-- 3. За секој профил да се врати името на профилот и просечната оцена на видео записите 
+-- во листата на желби асоцирана со тој профил.
+-- (Просечната оцена на секој видео запис се пресметува од сите оцени за тој видео запис).
+WITH ProsecniOcenki AS (
+    SELECT naslov, AVG(ocena) AS prosecna_ocenka
+    FROM Preporaka
+    GROUP BY naslov
+)
+SELECT lz.ime AS ime_na_profil, AVG(po.prosecna_ocenka) AS prosecna_ocenka_na_profil
+FROM Lista_zelbi lz
+JOIN ProsecniOcenki po ON lz.naslov = po.naslov
+GROUP BY lz.ime;
+
+-- 4. Да се вратат жанровите заедно со бројот на препораки со коментар што го содржи зборот „interesting“, 
+-- подредени според бројот на препораки во опаѓачки ред.
+SELECT vz.zanr AS zanr, COUNT(p.ID) AS broj_preporaki
+FROM Video_zapis_zanr vz
+JOIN Preporaka p ON vz.naslov = p.naslov
+WHERE LOWER(p.komentar) LIKE '%interesting%'
+GROUP BY vz.zanr
+ORDER BY broj_preporaki DESC;
+
+-- 5. Да се врати список со насловите на видеата, времетраењето и бројот на препораки, 
+-- за видеа кои се во листата на желби на најмалку два различни профили.
+WITH VideZaDvaProfila AS (
+    SELECT naslov
+    FROM Lista_zelbi
+    GROUP BY naslov
+    HAVING COUNT(DISTINCT ime) >= 2
+)
+SELECT v.naslov AS naslov_na_video, v.vremetraenje AS vremetraenje, COUNT(p.ID) AS broj_preporaki
+FROM VideZaDvaProfila vdp
+JOIN Video_zapis v ON vdp.naslov = v.naslov
+LEFT JOIN Preporaka p ON v.naslov = p.naslov
+GROUP BY v.naslov, v.vremetraenje;
+
+-- 6. Да се вратат имињата на сите корисници кои имаат дадено препораки за видеа кои никој од нивните профили 
+-- не ги има во листата на желби.
+WITH KorisniciBezVideVoLista AS (
+    SELECT DISTINCT k_ime_od
+    FROM Preporaka p
+    LEFT JOIN Lista_zelbi lz ON p.k_ime_od = lz.k_ime AND p.naslov = lz.naslov
+    WHERE lz.naslov IS NULL
+)
+SELECT DISTINCT k.ime AS korisnik_ime, k.prezime AS korisnik_prezime
+FROM Korisnik k
+JOIN KorisniciBezVideVoLista kbvl ON k.k_ime = kbvl.k_ime_od;
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+--1) Да се вратат имињата и презимињата на сите премиум корисници кои 
+--препорачале видео запис со времетраење подолго од 2 часа и за кој 
+--оставиле оцена поголема или еднаква на 4, подредени според датумот 
+--на регистрација во растечки редослед (времетраењето се чува во 
+--минути) 
+SELECT DISTINCT k.ime, k.prezime FROM Korisnik k 
+join Premium_korisnik pk on k.k_ime = pk.k_ime 
+join Preporaka p on p.k_ime_od = k.k_ime
+join Video_zapis vz on vz.naslov = p.naslov 
+WHERE vz.vremetraenje > 120 AND p.ocena >= 4
+ORDER BY k.datum_reg ASC 
+--2) Да се вратат корисничкото име и бројот на видео записи кои му биле 
+--препорачани на корисникот кој дал најголем број на препораки.
+WITH KorisnikDalPreporaki as (
+SELECT k.k_ime, vz.naslov, count(*) as preporaki FROM Korisnik k
+join Preporaka p ON p.k_ime_od = k.k_ime 
+join Video_zapis vz on vz.naslov = p.naslov 
+GROUP BY (k.k_ime)
+),
+
+MaxPreporaki as(
+SELECT * FROM KorisnikDalPreporaki
+WHERE preporaki LIKE (SELECT MAX(preporaki) from KorisnikDalPreporaki)
+)
+
+SELECT kp.k_ime, count(*) as dobieni_preporaki FROM MaxPreporaki kp
+join Korisnik k on k.k_ime = kp.k_ime
+join Preporaka p on p.k_ime_na = kp.k_ime
+join Video_zapis vz on vz.naslov = p.naslov
+GROUP BY (kp.k_ime)
+
+-- 3
+SELECT p.ime, AVG(ao) AS po_profil
+FROM Profil p
+JOIN Lista_zelbi lz ON p.k_ime = lz.k_ime AND p.ime = lz.ime
+JOIN (
+    SELECT naslov, AVG(ocena) AS ao
+    FROM Preporaka
+    GROUP BY naslov
+    ) A 
+    ON A.naslov = lz.naslov
+GROUP BY p.ime
+
+
+--4
+SELECT zanr, COUNT(*) AS broj_zanrovi
+FROM Video_zapis VZ
+JOIN Video_zapis_zanr VZZ ON VZ.naslov = VZZ.naslov
+JOIN Preporaka P ON VZ.naslov = P.naslov
+WHERE P.komentar LIKE '%interesting%'
+GROUP BY zanr
+ORDER BY 2 DESC
+
+
+-- 5
+WITH Najmalku_dva AS (
+  SELECT naslov
+  FROM Lista_zelbi
+  GROUP BY naslov
+  HAVING COUNT(DISTINCT ime) > 1
+)
+
+SELECT VZ.naslov, VZ.vremetraenje, COUNT(P.naslov) AS broj_preporaki
+FROM Najmalku_dva ND
+JOIN Video_zapis VZ ON ND.naslov = VZ.naslov
+LEFT JOIN Preporaka P ON VZ.naslov = P.naslov
+GROUP BY VZ.naslov
+
+
+-- 6
+WITH A AS(
+    SELECT DISTINCT k_ime_od
+    FROM Preporaka P
+    LEFT OUTER JOIN Lista_zelbi LZ ON P.k_ime_od = LZ.k_ime AND P.naslov = LZ.naslov
+    JOIN Korisnik K ON P.k_ime_od = K.k_ime
+    WHERE LZ.naslov IS NOT NULL
+)
+
+SELECT DISTINCT k_ime_od
+FROM Preporaka
+WHERE k_ime_od NOT IN A
